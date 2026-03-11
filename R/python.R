@@ -30,7 +30,7 @@ run_cellpose <- function(
   cellpose_args = NULL,
   python = "python3"
 ) {
-  script <- system.file("python", "incur_cellpose.py", package = "incur")
+  script <- system.file("python", "cellpose.py", package = "incur")
 
   args <- c(
     script,
@@ -76,7 +76,7 @@ run_cellpose <- function(
 #' )
 #'
 #' # Limit CPU usage
-#' merge_channels(
+#' run_merge_channels(
 #'   input_dirs = c("/data/ch1", "/data/ch2", "/data/ch3"),
 #'   output_dir = "/data/merged",
 #'   cores      = 4
@@ -84,13 +84,13 @@ run_cellpose <- function(
 #' }
 #'
 #' @export
-merge_channels <- function(
+run_merge_channels <- function(
   input_dirs,
   output_dir,
   cores = NULL,
   python = "python3"
 ) {
-  script <- system.file("python", "incur_merge_channels.py", package = "incur")
+  script <- system.file("python", "merge_channels.py", package = "incur")
 
   args <- c(script, input_dirs, output_dir)
 
@@ -192,7 +192,7 @@ run_trackmate <- function(
   track_merging_max_distance = 15.0,
   python = "python3"
 ) {
-  script <- system.file("python", "incur_trackmate.py", package = "incur")
+  script <- system.file("python", "trackmate.py", package = "incur")
 
   bool_arg <- function(flag, value) {
     if (isTRUE(value)) {

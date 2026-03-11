@@ -1,0 +1,281 @@
+---
+title: "Running the incur imaging pipeline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Running the incur imaging pipeline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+library(incur)
+```
+
+## Overview
+
+The `incur` package provides a three-step pipeline for processing high-content live-cell imaging data acquired on the IncuCyte platform:
+
+1. **`run_merge_channels()`** — merge multi-channel time-series TIFFs into a single file per well.
+2. **`run_cellpose()`** — segment cells in each frame using Cellpose.
+3. **`run_trackmate()`** — track segmented cells across frames using TrackMate via Fiji/ImageJ.
+
+Each function is a thin R wrapper that calls a Python script bundled with the package via `system2()`. You will need a working Python environment with Cellpose installed, and a Fiji installation with the TrackMate plugin.
+
+---
+
+## Prerequisites
+
+### Python environment
+
+`incur` ships a conda environment specification at `inst/python/environment.yaml` that pins all required dependencies, including `cellpose==4.0.8`, `torch==2.9.1`, and `segment-anything==1.0`. Using this file is the recommended way to set up a working Python environment.
+
+#### Option A — micromamba (recommended)
+
+The `prefix` field in `environment.yaml` targets `micromamba/envs/incur`, so micromamba will install the environment there by default. If you do not already have micromamba, see <https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html>.
+
+```{bash micromamba-install, engine="bash"}
+# Locate the bundled environment file
+ENV_FILE=$(Rscript -e 'cat(system.file("python", "environment.yml", package = "incur"))')
+
+# Create the environment (installs to micromamba/envs/incur by default)
+micromamba env create -f "$ENV_FILE"
+
+# Activate and verify
+micromamba activate incur
+python -c "import cellpose; print(cellpose.__version__)"
+```
+
+#### Option B — conda / mamba
+
+If you are already using conda or mamba, you can create a named environment from the same file. The `prefix` field in the YAML will be ignored in favour of the `-n` flag.
+
+```{bash conda-install, engine="bash"}
+ENV_FILE=$(Rscript -e 'cat(system.file("python", "environment.yml", package = "incur"))')
+
+# conda env create -n incur -f "$ENV_FILE"
+# or, faster:
+micromamba env create -n incur -f "$ENV_FILE"
+
+conda activate incur
+```
+
+#### Finding the Python executable path
+
+Once the environment is active, get the full path to the Python executable — you will need this for the `python` argument in each `incur` function:
+
+```{bash which-python, engine="bash"}
+# micromamba
+micromamba run -n incur which python
+
+# conda
+conda run -n incur which python
+```
+
+On most Linux/macOS systems this will be something like
+`~/micromamba/envs/incur/bin/python` or `~/miniconda3/envs/incur/bin python`. Store it in a variable at the top of your analysis script for convenience:
+
+```{r python-path}
+python_bin <- "~/micromamba/envs/incur/bin/python"   # adjust to your system
+```
+
+```r
+# Check that the bundled Python scripts are accessible
+system.file("python", "cellpose.py",       package = "incur")
+system.file("python", "merge_channels.py", package = "incur")
+system.file("python", "trackmate.py",      package = "incur")
+```
+
+If you are using a conda or virtual environment, pass the full path to the Python executable via the `python` argument in each function (see below).
+
+### Fiji / ImageJ
+
+Download Fiji from <https://fiji.sc/> and note the path to the executable, e.g.:
+
+- **Linux:** `/opt/fiji/Fiji.app/ImageJ-linux64`
+- **macOS:** `/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx`
+- **Windows:** `C:/Fiji.app/ImageJ-win64.exe`
+
+---
+
+## Step 1 — Merge channels
+
+If your IncuCyte experiment exports each fluorescence channel into a separate directory, use `run_merge_channels()` to combine them into a single multi-channel TIFF per well before segmentation.
+
+```{r merge-basic}
+run_merge_channels(
+  input_dirs = c("/data/experiment1/phase",
+                 "/data/experiment1/green"),
+  output_dir = "/data/experiment1/merged"
+)
+```
+
+For larger datasets you can parallelise across cores:
+
+```{r merge-parallel}
+run_merge_channels(
+  input_dirs = c("/data/ch1", "/data/ch2", "/data/ch3"),
+  output_dir = "/data/merged",
+  cores      = 8
+)
+```
+
+If the Python process exits with a non-zero status, `run_merge_channels()` will throw an informative error so the pipeline stops early rather than propagating bad data to downstream steps.
+
+---
+
+## Step 2 — Cellpose segmentation
+
+`run_cellpose()` takes the merged (or single-channel) directory and produces `_cp_masks.tif` files alongside each input image.
+
+### Basic usage — single channel
+
+```{r cellpose-basic}
+run_cellpose(
+  input_dir = "/data/experiment1/merged"
+)
+```
+
+### Specifying the segmentation channel
+
+Use the `channels` argument to select which channel to segment on (1-based). For example, to segment on channel 2 (e.g. a nuclear marker):
+
+```{r cellpose-channel}
+run_cellpose(
+  input_dir = "/data/experiment1/merged",
+  channels  = 2
+)
+```
+
+### Passing extra Cellpose CLI arguments
+
+Any additional Cellpose command-line arguments can be forwarded via
+`cellpose_args`. They are appended after `--` and passed verbatim to the Cellpose CLI.
+
+```{r cellpose-args}
+# Use the 'cyto2' model with a custom diameter
+run_cellpose(
+  input_dir     = "/data/experiment1/merged",
+  channels      = 1,
+  cellpose_args = c("--diameter", "30")
+)
+```
+
+### Using a custom Python executable
+
+```{r cellpose-python}
+run_cellpose(
+  input_dir = "/data/experiment1/merged",
+  python    = "/miniconda3/envs/cellpose/bin/python"
+)
+```
+
+---
+
+## Step 3 — TrackMate cell tracking
+
+`run_trackmate()` merges the Cellpose mask TIFFs with their source images, generates a TrackMate macro, and executes it via the Fiji CLI. Output `.xml` track files and `_spots.csv` tables are written to a `trackmate/` subdirectory inside `input_dir`.
+
+### Basic usage
+
+```{r trackmate-basic}
+run_trackmate(
+  input_dir = "/data/experiment1/merged",
+  fiji_path = "Fiji.app/ImageJ-linux64"
+)
+```
+
+### Tightening linking parameters
+
+The default linking distances are conservative (200 px). For densely packed cells or slower-moving populations you will typically want to tighten these:
+
+```{r trackmate-tight}
+run_trackmate(
+  input_dir                  = "/data/experiment1/merged",
+  fiji_path                  = "/opt/fiji/Fiji.app/ImageJ-linux64",
+  frame_linking_max_distance = 50,
+  gap_closing_max_distance   = 50,
+  gap_closing_max_frame_gap  = 2L
+)
+```
+
+### Cell division (track splitting)
+
+Track splitting is enabled by default, which allows TrackMate to detect cell
+division events. You can tune the maximum distance at which a split is accepted:
+
+```{r trackmate-split}
+run_trackmate(
+  input_dir                = "/data/experiment1/merged",
+  fiji_path                = "/opt/fiji/Fiji.app/ImageJ-linux64",
+  allow_track_splitting    = TRUE,
+  track_splitting_max_distance = 20
+)
+```
+
+To disable division detection entirely (e.g. for non-dividing populations):
+
+```{r trackmate-nosplit}
+run_trackmate(
+  input_dir             = "/data/experiment1/merged",
+  fiji_path             = "/opt/fiji/Fiji.app/ImageJ-linux64",
+  allow_track_splitting = FALSE
+)
+```
+
+### Verbose output
+
+Set `verbose = TRUE` to print the full TrackMate configuration and the Fiji command to the console before execution — useful for debugging:
+
+```{r trackmate-verbose}
+run_trackmate(
+  input_dir = "/data/experiment1/merged",
+  fiji_path = "/opt/fiji/Fiji.app/ImageJ-linux64",
+  verbose   = TRUE
+)
+```
+
+---
+
+## Full pipeline example
+
+The snippet below runs the complete three-step pipeline for a two-channel experiment, using a custom Python environment and tightened tracking parameters.
+
+```{r full-pipeline}
+python_bin <- "/home/zac/miniconda3/envs/cellpose/bin/python"
+fiji_bin   <- "/opt/fiji/Fiji.app/ImageJ-linux64"
+base_dir   <- "/data/experiment1"
+
+# 1. Merge phase and green channels
+run_merge_channels(
+  input_dirs = file.path(base_dir, c("phase", "green")),
+  output_dir = file.path(base_dir, "merged"),
+  cores      = 8,
+  python     = python_bin
+)
+
+# 2. Segment cells on the phase channel
+run_cellpose(
+  input_dir = file.path(base_dir, "merged"),
+  channels  = 1,
+  python    = python_bin
+)
+
+# 3. Track segmented cells
+run_trackmate(
+  input_dir                  = file.path(base_dir, "merged"),
+  fiji_path                  = fiji_bin,
+  frame_linking_max_distance = 50,
+  gap_closing_max_distance   = 50,
+  gap_closing_max_frame_gap  = 2L,
+  allow_track_splitting      = TRUE,
+  track_splitting_max_distance = 20,
+  verbose                    = TRUE
+)
+```
+
+After `run_trackmate()` completes, the `trackmate/` subdirectory will contain one `.xml` file and one `_spots.csv` file per input image.

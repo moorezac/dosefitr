@@ -14,8 +14,7 @@ files to segment.}
 segmentation (1-based indexing). Defaults to \code{1}.}
 
 \item{cellpose_args}{Character vector of additional arguments passed directly
-to the Cellpose CLI (e.g. \code{c("--pretrained_model", "cyto3",
-  "--diameter", "30")}). These are appended after \code{--} and passed
+to the Cellpose CLI. These are appended after \code{--} and passed
 through verbatim. Defaults to \code{NULL}.}
 
 \item{python}{Character. Path to the Python executable. Defaults to
@@ -34,13 +33,6 @@ and the resulting masks are stacked back into a time-series TIFF.
 \dontrun{
 # Basic usage
 run_cellpose("/data/experiment1")
-
-# Multi-channel with custom Cellpose settings
-run_cellpose(
-  input_dir     = "/data/experiment1",
-  channels      = c(1, 2),
-  cellpose_args = c("--pretrained_model", "cyto3", "--diameter", "30")
-)
 }
 
 }
