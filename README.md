@@ -27,7 +27,9 @@ Originally developed for high-content live-cell imaging data, dosefitr is **plat
 
 You can install incur via:
 
+```{r}
 remotes::install_github("moorezac/dosefitr")
+```
 
 **Usage**
 
