@@ -123,4 +123,11 @@ plot_curve_concentration_metric_dose(
 
 ## Learn
 
-See the vignettes.
+See the vignettes:
+
+[Example run](vignettes/example_run.Rmd)
+
+
+[Exporting IncuCyte data](vignettes/export_data.Rmd)
+
+[Running the segmentation pipeline](vignettes/python_preprocess.Rmd)
