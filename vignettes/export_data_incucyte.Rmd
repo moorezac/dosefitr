@@ -39,35 +39,8 @@ plate/
 
 # Merge Data
 
-We then merge all channels together into a single .tiff file for each well. To do this we use the `merge_incu_channels.py` script. This script takes an arbitrary number of directories as arguments, with each directory being added as a channel (in order), and the last argument being the directory to save the merged image. For example, using the above directory structure, running the following code in the terminal:
+We then merge all channels together into a single .tiff file for each well. To do this we use the `dosefitr_combine.py` script. This script takes an arbitrary number of directories as arguments, with each directory being added as a channel (in order), and the last argument being the directory to save the merged image. For example, using the above directory structure, running the following code in the terminal:
 ```
-python merge_incu_channels.py phase/ green/ red/ composite/
+python dosefitr_combine.py phase/ green/ red/ composite/
 ```
 Will take the phase, green, and red images, merge into a new image with channel 1 being phase, channel 2 being green etc., and then save them in a new folder `composite/`. For each image (well), this script will also produce a `datetime.csv` file which contains the precise datetime for each image, and a `metadata.csv` file that contains all IncuCyte-specific metadata.
-
-# Tracking & Segmentation
-
-With merged images we can now perform tracking and segmentation steps. We use and combination of `TrackMate`, a plugin for FIJI/ImageJ, and `cellpose` for segmentation. First, ensure that the `TrackMate` plugin is available within your FIJI/ImageJ. `TrackMate` can also work with other segmentation algorithms/models, but we find both the provided and custom trained models for `cellpose` to produce the best results. 
-
-Once a working environment is created, ensure that `cellpose` is able to run. This is also a good opportunity to find an appropriate model for your data, or even train a custom one on your own data. This is recommended if you are going to be doing repeated analysis on similar datasets.
-
-With a working model, we can then move to `TrackMate` to fine tune the tracking parameters. This is especially important if you are looking to aggregate readouts across multiple cells within a well. Once the tracking parameters have been fine tuned, we can then run the process in one of two ways:
-
-1. Using the TrackMate batcher in FIJI/ImageJ on our local machine.
-2. Running FIJI/ImageJ in headless mode on a HPC.
-
-Option 2 is the choice for large and/or repeated analyses. However, this process can be difficult to setup. There are 2 provided scripts to aid with this. First, the `trackmate_cellpose_segment.py` contains a script that is provided to FIJI/ImageJ that contains all `cellpose` and `TrackMate` parameters, and will need to be modified to contain yours. This can be run like so:
-
-```
-# on linux
-cd Fiji.app
-./ImageJ-linux64 --headless path/to/script/trackmate_cellpose_segment.py
-```
-
-On a SLURM-equipped HPC, this process cannot be achieved via the traditional `sbatch` command, as it needs to be run in an interactive manner. The provided script `example_slurm_srun.sh` that demonstrates how to achieve this. The downside with this approach is that the machine it is run needs to stay turned on/connected or else the interactive session stops. As a workaround, we start a VM, then run the script from there. The provided script also skips previously segmented images to save time. This will then produce a `-spots.csv` containing readouts across time and TrackMate `.xml` to view the data in FIJI/ImageJ. 
-
-We then use the `-spots.csv` for all further work.
-
-```{r}
-sessionInfo()
-```
