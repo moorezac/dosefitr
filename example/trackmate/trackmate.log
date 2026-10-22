@@ -1,0 +1,51 @@
+[INFO] Overriding BigStitcher; identifier: command:net.preibisch.stitcher.plugin.BigStitcher; jar: file:/Applications/Fiji/jars/BigStitcher-3.0.8.jar
+NAME example_data_merge
+Starting detection process using 12 threads.
+
+Detection processes 12 frames simultaneously and allocates 1 thread per frame.
+
+Found 1481 spots.
+
+Starting initial filtering process.
+
+Computing spot features over 12 frames simultaneously and allocating 1 thread per frame.
+
+Computation done in 2169 ms.
+
+Starting spot filtering process.
+
+Starting tracking process.
+
+Computing edge features:
+
+  - Directional change in 4 ms.
+
+  - Edge speed in 2 ms.
+
+  - Edge target in 2 ms.
+
+  - Edge location in 2 ms.
+
+Computation done in 11 ms.
+
+Computing track features:
+
+  - Branching analyzer in 1 ms.
+
+  - Track duration in 1 ms.
+
+  - Track index in 0 ms.
+
+  - Track location in 1 ms.
+
+  - Track speed in 0 ms.
+
+  - Track quality in 4 ms.
+
+  - Track motility analysis in 1 ms.
+
+Computation done in 11 ms.
+
+Starting track filtering process.
+
+SUCCESS

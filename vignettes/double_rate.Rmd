@@ -1,0 +1,172 @@
+---
+title: "Cell Growth Curve and Concentration Response Analysis"
+author: "Zachery Moore"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Cell Growth Curve Analysis}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  markdown: 
+    wrap: 80
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.height = 3.5,
+  fig.align = "center"
+)
+```
+
+# Objective
+
+The `dosefitr` package provides tools for analysing cell growth curves and the subsequenet calculation of doubling rates. This vignette walks through the main functionality using an example dataset included with the package.
+
+# Loading and visualising data
+
+First, load the package.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dosefitr)
+```
+
+The `double_data` dataset contains longitudinal measurements of spheroid area,
+acquired on the IncuCyte, at two seeding densities (1000 and 2000 cells). We
+start by plotting area over time, coloured by seeding density.
+
+```{r}
+data("double_data", package = "dosefitr")
+
+double_data_filt <- double_data |>
+  dplyr::select(cells_seeded, hours_from, area)
+
+ggplot2::ggplot(
+  double_data_filt,
+  ggplot2::aes(hours_from, area, colour = as.factor(cells_seeded))
+) +
+  ggplot2::geom_point() +
+  ggplot2::labs(colour = "Cells seeded")
+```
+
+Both seeding densities show the expected exponential growth, with the higher
+density (2000 cells) reaching larger final areas than the lower density (1000
+cells).
+
+# Fitting growth models
+
+`fit_curve()` fits a growth model to the data. Here we use
+`five_param_sigmoid`. Parameters can be shared between experimental groups to
+improve fitting stability: `shared_group` specifies the column holding the
+grouping variable (seeding density), and `shared_parameters` specifies which
+model parameters are shared. Here we share `top` (maximum growth) and `slope`.
+
+```{r}
+double_model <- fit_curve(
+  data = double_data_filt,
+  x_var = "hours_from",
+  y_var = "area",
+  curve_options = list(model = "five_param_sigmoid"),
+  shared_options = list(
+    shared_group = "cells_seeded",
+    shared_parameters = c("top", "slope")
+  )
+)
+```
+
+The fitted `nls` object contains the parameter estimates for each curve.
+
+```{r}
+double_model$curve$nls_model
+```
+
+We can then visualise the fit.
+
+```{r}
+plot_model(
+  list = double_model,
+  x_var = "hours_from",
+  y_var = "area"
+)
+```
+
+# Handling outliers
+
+Experimental data often contain outliers that can distort model fits. Setting
+`huber = TRUE` uses a Huber loss to down-weight the influence of extreme points
+during fitting, and `rout = TRUE` uses the ROUT method to identify and remove
+outliers. Outliers are highlighted in the resulting plot.
+
+```{r}
+double_model_outlier <- fit_curve(
+  data = double_data_filt,
+  x_var = "hours_from",
+  y_var = "area",
+  curve_options = list(model = "five_param_sigmoid"),
+  shared_options = list(
+    shared_group = "cells_seeded",
+    shared_parameters = c("top", "slope")
+  ),
+  outlier_options = list(huber = TRUE, rout = TRUE)
+)
+
+plot_model(
+  list = double_model_outlier,
+  x_var = "hours_from",
+  y_var = "area"
+)
+```
+
+# Calculating doubling times
+
+Doubling time is a key metric for growth analysis. We first use
+`predict_data()` to generate smooth predicted curves from the fitted model for
+each seeding density.
+
+```{r}
+double_model_predicted <- lapply(
+  c(1000, 2000),
+  function(group) {
+    predict_data(
+      nls_model = double_model$curve$nls_model,
+      lower_x = min(double_model$data$hours_from),
+      upper_x = max(double_model$data$hours_from),
+      group = group
+    )
+  }
+) |>
+  dplyr::bind_rows() |>
+  dplyr::rename(hours_from = x, area = y, cells_seeded = group)
+```
+
+`calc_double_rate_data()` then calculates the doubling time from these
+predicted curves. Because spheroid area is a two-dimensional readout of a
+three-dimensional object, `doubling_readout_factor` converts the area change to
+the equivalent change in volume (here `2^(2/3)`, assuming spherical spheroids).
+For confluence or direct cell counts, set this to 1. The function also returns
+diagnostic plots showing the growth curves and the points used in the
+calculation.
+
+```{r}
+double_rate <- calc_double_rate_data(
+  data = double_model_predicted,
+  x_var = "hours_from",
+  y_var = "area",
+  cell_column = "cells_seeded",
+  doubling_readout_factor = 2^(2 / 3)
+)
+
+# Diagnostic plots
+double_rate$linear
+double_rate$log
+
+# Doubling time
+double_rate$double_time
+```
+
+# Session information
+
+```{r}
+sessionInfo()
+```

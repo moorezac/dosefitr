@@ -1,0 +1,191 @@
+---
+title: "Concentration Response Analysis"
+author: "Zachery Moore"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Constraining Curve Parameters}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  markdown: 
+    wrap: 80
+  chunk_output_type: console
+---
+
+# Objective
+
+The `dosefitr` package provides tools for analysing dose-response curves and the subsequent calculation of GR, NDR and LGR metrics. This vignette walks through the main functionality of this using an example dataset included with the package.
+
+First, load the package.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dosefitr)
+```
+
+# Dose-response analysis
+
+The `conc_data` dataset contains spheroid area measurements over time across a
+range of drug concentrations. As before, we start by plotting the raw data.
+
+```{r}
+data("conc_data", package = "dosefitr")
+
+ggplot2::ggplot(
+  conc_data,
+  ggplot2::aes(hours_from, area, colour = as.factor(concentration))
+) +
+  ggplot2::geom_point() +
+  ggplot2::labs(colour = "log[M]")
+```
+
+`fit_concentrations()` fits a curve to each concentration. By default it tries
+every model in `dosefitr_models` and selects the best fit, but this can be
+restricted to a subset. For example, to consider only sigmoid models:
+
+```{r}
+conc_model <- fit_concentrations(
+  data = conc_data,
+  x_var = "hours_from",
+  y_var = "area",
+  treatment_column = "treatment_name",
+  negative_control_name = "vehicle",
+  concentration_column = "concentration",
+  outlier_options = list(huber = TRUE, rout = TRUE),
+  models = c("four_param_sigmoid", "five_param_sigmoid")
+)
+
+conc_model$plot
+```
+
+Or to consider all models except `beta_growth_decay`:
+
+```{r}
+conc_model <- fit_concentrations(
+  data = conc_data,
+  x_var = "hours_from",
+  y_var = "area",
+  treatment_column = "treatment_name",
+  negative_control_name = "vehicle",
+  concentration_column = "concentration",
+  outlier_options = list(huber = TRUE, rout = TRUE),
+  models = setdiff(names(dosefitr_models), "beta_growth_decay")
+)
+
+conc_model$plot
+```
+
+## Identifying complete killing
+
+The two highest concentrations (-4 and -4.5 log M) clearly break from the trend
+of the rest of the series. At these doses the spheres were completely killed,
+so the measured areas are not real signal; they are segmentation artefacts from
+debris and dead-cell material rather than intact spheres.
+
+This kind of non-monotonic response can be flagged automatically. Setting
+`monotonic_check = TRUE` warns when the response reverses direction at high
+concentrations, which is a useful prompt to go back and check the images.
+
+```{r}
+conc_model <- fit_concentrations(
+  data = conc_data,
+  x_var = "hours_from",
+  y_var = "area",
+  treatment_column = "treatment_name",
+  negative_control_name = "vehicle",
+  concentration_column = "concentration",
+  outlier_options = list(huber = TRUE, rout = TRUE),
+  models = setdiff(names(dosefitr_models), "beta_growth_decay"),
+  monotonic_check = TRUE
+)
+```
+
+Where you know a concentration caused complete killing, add a logical `exclude`
+column to the data. Wells marked `TRUE` are treated as 100% killing rather than
+fitted from their (artefactual) measured areas. If you would rather drop these
+concentrations from the analysis entirely, filter them out of the data instead.
+
+```{r}
+conc_data <- dplyr::mutate(
+  conc_data,
+  exclude = concentration %in% c(-4, -4.5)
+)
+
+conc_model <- fit_concentrations(
+  data = conc_data,
+  x_var = "hours_from",
+  y_var = "area",
+  treatment_column = "treatment_name",
+  negative_control_name = "vehicle",
+  concentration_column = "concentration",
+  outlier_options = list(huber = TRUE, rout = TRUE),
+  models = setdiff(names(dosefitr_models), "beta_growth_decay"),
+  monotonic_check = TRUE
+)
+```
+
+## Visualising the results
+
+Area over time, coloured by concentration. Concentrations marked as complete
+killing are shown in red.
+
+```{r}
+plot_curve_concentration(
+  model_list = conc_model$model_list,
+  x_var = "hours_from",
+  y_var = "area",
+  treatment_column = "treatment_name",
+  concentration_column = "concentration",
+  negative_control_name = "vehicle"
+)
+```
+
+Growth rate (GR) over time at each concentration shows how the drug alters the
+rate of growth throughout the experiment.
+
+```{r}
+plot_metric_time <- plot_curve_concentration_metric_time(
+  model_list = conc_model$model_list,
+  x_var = "hours_from",
+  metric = "gr",
+  treatment_column = "treatment_name",
+  concentration_column = "concentration",
+  negative_control_name = "vehicle"
+)
+
+plot_metric_time$plot
+```
+
+Finally, the dose-response curve summarises growth inhibition as a function of
+drug concentration, incorporating GR values measured at all timepoints across the experiment.
+
+```{r}
+plot_metric_dose <- plot_curve_concentration_metric_dose(
+  model_list = conc_model$model_list,
+  x_var = "hours_from",
+  metric = "gr",
+  treatment_column = "treatment_name",
+  concentration_column = "concentration",
+  negative_control_name = "vehicle"
+)
+
+plot_metric_dose$plot
+```
+
+We can also use the LGR score to visualise response. See the `dosefitr` manuscript on a full explanation of this metric and it's interpretation.
+
+```{r}
+plot_lgr_score(
+  model_list = conc_model$model_list,
+  x_var = "hours_from",
+  metric = "gr",
+  treatment_column = "treatment_name",
+  concentration_column = "concentration",
+  negative_control_name = "vehicle"
+)
+```
+
+# Session information
+
+```{r}
+sessionInfo()
+```

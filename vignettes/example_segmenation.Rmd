@@ -1,0 +1,263 @@
+---
+title: "Image Processing with Cellpose and TrackMate"
+author: "Zachery Moore"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Image Processing with Cellpose and TrackMate}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  markdown: 
+    wrap: 80
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.height = 3.5,
+  fig.align = "center",
+  eval = FALSE
+)
+```
+
+# Objective
+
+Before growth curves can be fitted, raw time-lapse images need to be segmented
+and the resulting objects tracked over time. `dosefitr` wraps two external
+tools for this: [Cellpose](https://www.cellpose.org/) for segmentation and
+[TrackMate](https://imagej.net/plugins/trackmate/) (via Fiji) for tracking.
+This vignette walks through installing these tools, running the image
+processing pipeline, and importing the output back into R.
+
+The code in this vignette is not evaluated when the package is built, as it
+depends on external software and local image files.
+
+# Installation
+
+## Cellpose
+
+Cellpose is a Python package and is best installed into its own conda
+environment. If you don't already have conda, we recommend
+[Miniforge](https://github.com/conda-forge/miniforge). See https://github.com/mouseland/cellpose for detailed instructions on installation.
+
+`dosefitr` needs the path to the Python executable inside this environment.
+With the environment active, you can find it with:
+
+```{bash}
+which python
+```
+
+On macOS with Miniforge this will look something like
+`/Users/<username>/miniforge3/envs/cellpose/bin/python`.
+
+## Fiji and TrackMate
+
+Download [Fiji](https://fiji.sc/) and install it somewhere convenient (for
+example, `/Applications/Fiji` on macOS). TrackMate ships with Fiji, so no
+further installation is needed. Note the path to the Fiji executable, as
+`dosefitr` will need it.
+
+# Example data
+
+An example image is available in the
+[`example/` folder](https://github.com/moorezac/dosefitr/tree/main/example/example_data.tiff) of
+the `dosefitr` GitHub repository. It is a two-channel time-lapse of 2D cells
+imaged every hour for 24 hours, with a brightfield channel and a nuclear stain.
+To follow along, download the folder and place it in your working directory.
+
+# Processing images
+
+First, load the package.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, eval=TRUE}
+library(dosefitr)
+```
+
+## Step 2: Cellpose segmentation
+
+`run_cellpose()` takes a directory of merged (or single-channel) images and
+writes a `_cp_masks.tif` file alongside each input image. `python` points to
+the executable in the conda environment created above.
+
+For the example image, we segment using both the brightfield and nuclear
+channels:
+
+```{r cellpose-example}
+# Example
+path_to_python <- "/Users/<username>/miniforge3/envs/cellpose/bin/python"
+
+dosefitr::run_cellpose(
+  input_dir = "example/",
+  channels = c(1, 2),
+  python = path_to_python
+)
+```
+
+### Specifying the segmentation channel
+
+Use the `channels` argument to select which channel to segment on (1-based).
+For example, to segment on channel 2 only (the nuclear stain in the example
+image):
+
+```{r cellpose-channel}
+dosefitr::run_cellpose(
+  input_dir = "example/",
+  channels = 2,
+  python = "/Users/<username>/miniforge3/envs/cellpose/bin/python"
+)
+```
+
+### Passing extra Cellpose arguments
+
+Any additional Cellpose command-line arguments can be forwarded via
+`cellpose_args`. They are passed verbatim to the Cellpose CLI. For example, to
+set a fixed object diameter of 30 pixels:
+
+```{r cellpose-args}
+dosefitr::run_cellpose(
+  input_dir = "example/",
+  channels = 2,
+  python = "/Users/<username>/miniforge3/envs/cellpose/bin/python",
+  cellpose_args = c("--diameter", "30")
+)
+```
+
+## Step 3: TrackMate cell tracking
+
+`run_trackmate()` merges the Cellpose masks with their source images, generates
+a TrackMate macro, and runs it via the Fiji command line. Track files (`.xml`)
+and spot tables (`_spots.csv`) are written to a `trackmate/` folder inside
+`input_dir`.
+
+```{r trackmate-example}
+# Example
+path_to_fiji <- "/Applications/Fiji/fiji"
+
+dosefitr::run_trackmate(
+  input_dir = "example/",
+  fiji_path = path_to_fiji
+)
+```
+
+### Tightening linking parameters
+
+The default linking distances are conservative (200 pixels). For densely packed
+cells or slower-moving populations you will typically want to tighten these:
+
+```{r trackmate-tight}
+dosefitr::run_trackmate(
+  input_dir = "example/",
+  fiji_path = path_to_fiji,
+  frame_linking_max_distance = 50,
+  gap_closing_max_distance = 50,
+  gap_closing_max_frame_gap = 2
+)
+```
+
+### Cell division (track splitting)
+
+Track splitting is enabled by default, which allows TrackMate to detect cell
+division events. You can tune the maximum distance at which a split is
+accepted:
+
+```{r trackmate-split}
+dosefitr::run_trackmate(
+  input_dir = "example/",
+  fiji_path = path_to_fiji,
+  allow_track_splitting = TRUE,
+  track_splitting_max_distance = 20
+)
+```
+
+To disable division detection entirely (for example, for non-dividing
+populations):
+
+```{r trackmate-nosplit}
+dosefitr::run_trackmate(
+  input_dir = "example/",
+  fiji_path = path_to_fiji,
+  allow_track_splitting = FALSE
+)
+```
+
+### Verbose output
+
+Set `verbose = TRUE` to print the full TrackMate configuration and the Fiji
+command to the console before running, which is useful for debugging:
+
+```{r trackmate-verbose}
+dosefitr::run_trackmate(
+  input_dir = "example/",
+  fiji_path = path_to_fiji,
+  verbose = TRUE
+)
+```
+
+## Running on an HPC
+
+`run_cellpose()` and `run_trackmate()` are convenient for small experiments,
+but they process images one at a time on your local machine. For a full plate,
+this can take many hours. If you have access to a high-performance computing
+(HPC) cluster, it is much faster to use the scripts provided with the package. You can find where they are with:
+
+```{r hpc-scripts}
+hpc_scripts <- system.file("python", package = "dosefitr")
+list.files(hpc_scripts, full.names = TRUE)
+```
+
+# Importing and summarising data
+
+`import_trackmate()` reads the TrackMate spot files into a named list of data
+frames, one per well. Where a well ID can't be found in the filename, the
+filename itself is used as the name instead.
+
+```{r import}
+data <- dosefitr::import_trackmate(
+  spot_path = "example/trackmate/"
+)
+
+data$example_data
+```
+
+If timestamps were exported alongside the images, pass their directory to
+`datetime_path` to join acquisition times onto each frame.
+
+`summarise_trackmate()` collapses the per-spot data into per-frame summaries
+for each well, such as the number of spots and their mean radius. Here we have
+no timestamps, so we summarise by frame. As the example image was acquired
+hourly, each frame corresponds to one hour.
+
+```{r summarise}
+data_sum <- dosefitr::summarise_trackmate(
+  spot_list = data,
+  datetime_column = "frame"
+)
+```
+
+We can then plot these summaries over time. Mean radius gives a measure of
+object size:
+
+```{r plot-radius}
+ggplot2::ggplot(
+  data_sum$example_data,
+  ggplot2::aes(frame, mean_radius)
+) +
+  ggplot2::geom_point() +
+  theme_dosefitr()
+```
+
+And the number of spots tracks how many objects are detected in each frame:
+
+```{r plot-spots}
+ggplot2::ggplot(
+  data_sum$example_data,
+  ggplot2::aes(frame, num_spots)
+) +
+  ggplot2::geom_point() +
+  theme_dosefitr()
+```
+
+```{r}
+sessionInfo()
+```

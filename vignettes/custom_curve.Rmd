@@ -1,0 +1,253 @@
+---
+title: "Custom Curve and Start Functions"
+author: "Zachery Moore"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Custom Curve and Start Functions}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  markdown: 
+    wrap: 80
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.height = 3.5,
+  fig.align = "center"
+)
+```
+
+# Objective
+
+`dosefitr` ships with a library of growth and dose-response models in
+`dosefitr_models`, but you aren't limited to these. Any function of `x` can be
+used as a curve, and you can control how the fit is started either with a
+function that estimates starting values from the data or with fixed values.
+
+This vignette uses the built-in `cars` dataset (stopping distance against
+speed) to show how to:
+
+1. fit a built-in model,
+2. inspect how a built-in model is defined,
+3. supply your own curve function,
+4. supply your own start function, and
+5. supply fixed starting values instead.
+
+# Loading and visualising data
+
+First, load the package.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dosefitr)
+```
+
+`cars` records the speed of 50 cars and the distance each took to stop. Here we
+model speed as a function of stopping distance.
+
+```{r}
+ggplot2::ggplot(cars, ggplot2::aes(dist, speed)) +
+  ggplot2::geom_point() +
+  ggplot2::labs(x = "Stopping distance (ft)", y = "Speed (mph)")
+```
+
+Speed rises quickly at short distances and then levels off, which suggests a
+saturating curve.
+
+# Fitting a built-in model
+
+Built-in models are selected by name through `curve_options$model`. Here we fit
+a four-parameter sigmoid.
+
+```{r}
+cars_model <- fit_curve(
+  cars,
+  x_var = "dist",
+  y_var = "speed",
+  curve_options = list(model = "four_param_sigmoid")
+)
+
+plot_model(cars_model, x_var = "dist", y_var = "speed")
+```
+
+The same model handles decreasing responses without any changes. If we take
+the reciprocal of speed, the curve falls instead of rising, and the sigmoid
+simply fits with `top` and `bottom` swapped.
+
+```{r}
+cars_model_inverse <- fit_curve(
+  cars |> dplyr::mutate(speed = 1 / speed),
+  x_var = "dist",
+  y_var = "speed",
+  curve_options = list(model = "four_param_sigmoid")
+)
+
+plot_model(cars_model_inverse, x_var = "dist", y_var = "speed")
+```
+
+Comparing the parameter estimates for the two fits:
+
+```{r}
+cars_model$curve$nls_model
+cars_model_inverse$curve$nls_model
+```
+
+# How models are defined
+
+Each entry in `dosefitr_models` is a list containing a curve function and the
+information needed to start the fit. Looking at one shows the structure a
+custom model needs to follow.
+
+```{r}
+names(dosefitr_models$four_param_sigmoid)
+
+dosefitr_models$four_param_sigmoid$curve_function
+```
+
+A curve function takes `x` as its first argument, followed by one argument per
+model parameter, and returns the predicted `y`. The parameter names are what
+appear in the fitted model, and what a start function must return.
+
+Related models can be compared the same way. For example, the log-scale
+version of the sigmoid, which expects `x` as log concentration:
+
+```{r}
+dosefitr_models$four_param_sigmoid_log$curve_function
+```
+
+# Custom curve functions
+
+To fit a model that isn't in `dosefitr_models`, pass a function to
+`curve_options$curve_function`. A custom curve also needs starting values,
+which can come from a start function or be given directly.
+
+## A saturation curve
+
+The levelling-off in `cars` looks like a simple saturation (hyperbolic) curve,
+with two parameters: `bmax`, the plateau, and `kd`, the `x` value at which
+half the plateau is reached.
+
+```{r}
+saturation_curve <- function(x, bmax, kd) {
+  bmax * x / (kd + x)
+}
+```
+
+A start function takes `x` and `y` and returns a named list of starting values,
+one per parameter. Both parameters here have a direct reading from the data:
+`bmax` is roughly the largest `y`, and `kd` is roughly the `x` where `y` is
+halfway between its minimum and maximum.
+
+```{r}
+saturation_start <- function(x, y) {
+  mid <- min(y) + (max(y) - min(y)) / 2
+
+  list(
+    bmax = max(y),
+    kd = x[which.min(abs(y - mid))]
+  )
+}
+
+saturation_start(cars$dist, cars$speed)
+```
+
+Pass both functions in `curve_options`:
+
+```{r}
+cars_saturation <- fit_curve(
+  cars,
+  x_var = "dist",
+  y_var = "speed",
+  curve_options = list(
+    curve_function = saturation_curve,
+    start_function = saturation_start
+  )
+)
+
+plot_model(cars_saturation, x_var = "dist", y_var = "speed")
+
+cars_saturation$curve$nls_model
+```
+
+## A quadratic curve
+
+Any function of `x` works, including ones with no biological interpretation.
+Here we fit a quadratic.
+
+```{r}
+quad_curve <- function(x, a, b, c) {
+  (a * x^2) + (b * x) + c
+}
+```
+
+The parameters of a quadratic don't map onto features you can read off a plot
+as easily. But because the model is linear in its parameters, an ordinary
+linear regression gives good starting values directly. This is a useful
+general trick: if a model can be written as a linear model, `lm()` makes a
+reliable start function.
+
+```{r}
+quad_start <- function(x, y) {
+  coefs <- unname(stats::coef(stats::lm(y ~ I(x^2) + x)))
+
+  list(
+    a = coefs[2],
+    b = coefs[3],
+    c = coefs[1]
+  )
+}
+
+quad_start(cars$dist, cars$speed)
+```
+
+```{r}
+cars_quadratic <- fit_curve(
+  cars,
+  x_var = "dist",
+  y_var = "speed",
+  curve_options = list(
+    curve_function = quad_curve,
+    start_function = quad_start
+  )
+)
+
+plot_model(cars_quadratic, x_var = "dist", y_var = "speed")
+```
+
+# Fixed starting values
+
+If you already know roughly where the parameters should sit, or are fitting a
+single dataset, you can skip the start function and pass `start_values`
+directly as a named list.
+
+```{r}
+cars_quadratic_start <- fit_curve(
+  cars,
+  x_var = "dist",
+  y_var = "speed",
+  curve_options = list(
+    curve_function = quad_curve,
+    start_values = list(a = -1, b = 1, c = 1)
+  )
+)
+
+plot_model(cars_quadratic_start, x_var = "dist", y_var = "speed")
+```
+
+Both approaches converge to the same fit:
+
+```{r}
+cars_quadratic$curve$nls_model
+cars_quadratic_start$curve$nls_model
+```
+
+A start function is the better choice when fitting many datasets, such as one
+curve per concentration, since the starting values adapt to each one. Fixed
+values are simpler for a one-off fit, but may fail to converge if the data
+change scale.
+
+```{r}
+sessionInfo()
+```

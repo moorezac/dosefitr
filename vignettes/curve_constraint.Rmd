@@ -1,0 +1,136 @@
+---
+title: "Constraining Curve Parameters"
+author: "Zachery Moore"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Constraining Curve Parameters}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  markdown: 
+    wrap: 80
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.height = 3.5,
+  fig.align = "center"
+)
+```
+
+# Objective
+
+The `dosefitr` package provides tools for fitting curves to data. This vignette walks through the main functionality of setting bounds on individual curve parameters.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dosefitr)
+```
+
+# Constraining curve parameters
+
+By default, `fit_curve()` estimates every model parameter freely from the data.
+Sometimes you know more about the system than the data alone can tell the
+model, for example that a readout cannot exceed a physical maximum. In these
+cases you can place bounds on individual parameters.
+
+To illustrate, we use the built-in `iris` dataset. Petal width and petal length
+aren't a growth curve, but their relationship has a saturating shape that makes
+a convenient example. We first express each measurement as a percentage of its
+maximum, so both variables run from 0 to 100.
+
+```{r}
+iris_percent <- data.frame(
+  width = iris$Petal.Width / max(iris$Petal.Width) * 100,
+  length = iris$Petal.Length / max(iris$Petal.Length) * 100
+)
+
+ggplot2::ggplot(iris_percent, ggplot2::aes(x = width, y = length)) +
+  ggplot2::geom_point() +
+  theme_dosefitr()
+```
+
+## Unconstrained fit
+
+We start by fitting a four-parameter sigmoid with no constraints.
+
+```{r}
+iris_model <- fit_curve(
+  data = iris_percent,
+  x_var = "width",
+  y_var = "length",
+  curve_options = list(model = "four_param_sigmoid")
+)
+
+iris_model$curve$nls_model
+
+plot_model(
+  list = iris_model,
+  x_var = "width",
+  y_var = "length"
+)
+```
+
+## Bounding a parameter
+
+Bounds are passed through `curve_options` as named lists, `upper_bounds` and
+`lower_bounds`, where each name matches a model parameter. Because length is
+expressed as a percentage of its maximum, the curve should not plateau above
+100. However, we can cap the top at 80.
+
+```{r}
+iris_model_bounded <- fit_curve(
+  data = iris_percent,
+  x_var = "width",
+  y_var = "length",
+  curve_options = list(
+    model = "four_param_sigmoid",
+    upper_bounds = list(top = 80)
+  )
+)
+
+iris_model_bounded$curve$nls_model
+
+plot_model(
+  list = iris_model_bounded,
+  x_var = "width",
+  y_var = "length"
+)
+```
+
+Comparing the parameter estimates with the unconstrained fit, `top` is now held
+at or below 80, and the remaining parameters adjust to compensate.
+`lower_bounds` works the same way, for example `lower_bounds = list(bottom = 25)`
+to stop the lower plateau falling below 25.
+
+## Combining bounds with outlier handling
+
+Parameter bounds can be combined with the outlier options described earlier.
+
+```{r}
+iris_model_bounded_outlier <- fit_curve(
+  data = iris_percent,
+  x_var = "width",
+  y_var = "length",
+  curve_options = list(
+    model = "four_param_sigmoid",
+    upper_bounds = list(top = 80)
+  ),
+  outlier_options = list(huber = TRUE, rout = TRUE)
+)
+
+iris_model_bounded_outlier$curve$nls_model
+
+plot_model(
+  list = iris_model_bounded_outlier,
+  x_var = "width",
+  y_var = "length"
+)
+```
+
+# Session information
+
+```{r}
+sessionInfo()
+```
