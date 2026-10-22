@@ -37,19 +37,7 @@ The principle goal of dosefitr is to provide a user-friendly pipeline to segment
 
 ### 1. Image Processing
 
-Raw time-lapse images are processed using the bundled Python scripts, which can be
-called directly from R:
-
-```r
-# Step 1a: Segment cells in each frame using Cellpose
-run_cellpose()
-
-# Step 1b: Merge segmentation masks with source imagery
-run_combine()
-
-# Step 1c: Track cells across frames using TrackMate
-run_trackmate()
-```
+Raw time-lapse images are processed using the bundled Python scripts, which can be called directly from R.
 
 ### 2. Curve Fitting
 
@@ -67,7 +55,7 @@ result <- fit_curve(
 )
 
 # Across concentrations
-model_list <- interpolate_curve_concentration(
+model_list <- fit_concentrations(
   data,
   x_var,
   y_var,
@@ -81,7 +69,7 @@ model_list <- interpolate_curve_concentration(
 However, the automated curve fitting functions are able to be used on any dataset, and includes option for shared parameters across groups, outlier detection, and upper/lower limits on parameters. See below for built-in options:
 
 <div align="center">
-  <img src="images/example_curves.jpg" width="50%">
+  <img src="images/example_curves.jpg" width="100%">
 </div>
 
 ### 3. Visualisations
@@ -137,4 +125,4 @@ See the vignettes for detailed examples.
 
 [Constraint of Curve Parameters](vignettes/curve_constraint.Rmd)
 
-[Fitting Custom Modelos](vignettes/custom_curve.Rmd)
+[Fitting Custom Models](vignettes/custom_curve.Rmd)
