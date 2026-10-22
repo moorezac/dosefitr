@@ -12,6 +12,12 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.align = "center"
+)
+```
+
 # Objective
 
 The `dosefitr` package provides tools for analysing dose-response curves and the subsequent calculation of GR, NDR and LGR metrics. This vignette walks through the main functionality of this using an example dataset included with the package.

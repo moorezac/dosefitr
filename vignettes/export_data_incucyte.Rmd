@@ -11,7 +11,12 @@ editor_options:
     wrap: 80
 ---
 
-# Objective
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  fig.align = "center",
+  eval = FALSE
+)
+```
 
 # Export Data
 

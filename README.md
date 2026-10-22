@@ -125,11 +125,16 @@ plot_curve_concentration_metric_dose(
 
 ## Learn
 
-See the vignettes:
+See the vignettes for detailed examples.
 
-[Example run](vignettes/example_run.Rmd)
+[Exporting IncuCyte Data](vignettes/export_data_incucyte.Rmd)
 
+[Segmentation Helpers](vignettes/example_segmenation.Rmd)
 
-[Exporting IncuCyte data](vignettes/export_data.Rmd)
+[Calculation of Doubling Rates](vignettes/double_rate.Rmd)
 
-[Running the segmentation pipeline](vignettes/python_preprocess.Rmd)
+[Concentation-Response Curves](vignettes/concentration_response.Rmd)
+
+[Constraint of Curve Parameters](vignettes/curve_constraint.Rmd)
+
+[Fitting Custom Modelos](vignettes/custom_curve.Rmd)
